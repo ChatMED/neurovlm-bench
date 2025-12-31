@@ -1,0 +1,26 @@
+dataset,file_path,class,original_class,subclass,modality,modality_subtype,plane
+sclerosis,sclerosis/MS/MS Saggital_crop/S1 (706).png,multiple sclerosis,,,MRI,FLAIR,sagittal
+sclerosis,sclerosis/MS/MS Axial_crop/A1 (197).png,multiple sclerosis,,,MRI,FLAIR,axial
+sclerosis,sclerosis/MS/MS Axial_crop/A1 (586).png,multiple sclerosis,,,MRI,FLAIR,axial
+sclerosis,sclerosis/MS/MS Saggital_crop/S1 (210).png,multiple sclerosis,,,MRI,FLAIR,sagittal
+sclerosis,sclerosis/MS/MS Axial_crop/A1 (88).png,multiple sclerosis,,,MRI,FLAIR,axial
+sclerosis,sclerosis/MS/Control Saggital_crop/kontrol 30 (4).png,normal,,,MRI,FLAIR,sagittal
+stroke,stroke/Brain_Stroke_CT_Dataset/Normal/PNG/12731.png,normal,,,CT,,axial
+stroke,stroke/Brain_Stroke_CT_Dataset/Normal/PNG/14965.png,normal,,,CT,,axial
+sclerosis,sclerosis/MS/Control Axial_crop/kontrol 32 (7).png,normal,,,MRI,FLAIR,axial
+stroke,stroke/Brain_Stroke_CT_Dataset/Normal/PNG/16328.png,normal,,,CT,,axial
+images-17,"images-17/Outros Tipos de Lesões (Abscessos, Cistos, Encefalopatias Diversas) T2/outros (5).jpeg",other abnormalities,,,MRI,T2,axial
+images-17,"images-17/Outros Tipos de Lesões (Abscessos, Cistos, Encefalopatias Diversas) T2/outros (6).jpg",other abnormalities,,,MRI,T2,axial
+images-17,"images-17/Outros Tipos de Lesões (Abscessos, Cistos, Encefalopatias Diversas) T1/outros (103).jpeg",other abnormalities,,,MRI,T1,axial
+images-17,"images-17/Outros Tipos de Lesões (Abscessos, Cistos, Encefalopatias Diversas) T1/outros (58).jpeg",other abnormalities,,,MRI,T1,axial
+images-17,"images-17/Outros Tipos de Lesões (Abscessos, Cistos, Encefalopatias Diversas) T1/outros (70).jpeg",other abnormalities,,,MRI,T1,axial
+stroke,stroke/Brain_Stroke_CT_Dataset/Ischemia/PNG/11036.png,stroke,Ischemic,ischemic,CT,,axial
+stroke,stroke/Brain_Stroke_CT_Dataset/Ischemia/PNG/11900.png,stroke,Ischemic,ischemic,CT,,axial
+aisd,aisd/image/0226143/024.png,stroke,clear acute infarct,ischemic,CT,,axial
+aisd,aisd/image/0538673/010.png,stroke,clear acute infarct,ischemic,CT,,axial
+stroke,stroke/Brain_Stroke_CT_Dataset/Ischemia/PNG/11250.png,stroke,Ischemic,ischemic,CT,,axial
+images-44c,images-44c/Carcinoma T1C+/2022-06-09 14_09_52-Window.jpg,tumor,carcinoma,carcinoma,MRI,T1C+,
+images-44c,images-44c/Glioblastoma T1C+/a6d8cff8aadea263e22ddceedc24373734c7751f6283094960bc9d7f6970dc84_big_gallery.jpeg,tumor,glioblastoma,glioma,MRI,T1C+,
+images-17,"images-17/Meningioma (de Baixo Grau, Atípico, Anaplásico, Transicional) T1C+/meningioma (176).jpeg",tumor,"Meningioma (de Baixo Grau, Atípico, Anaplásico, Transicional) T1C+",meningioma,MRI,T1C+,axial
+Br35H,Br35H/yes/y864.jpg,tumor,,,MRI,,axial
+images-17,"images-17/Neurocitoma (Central - Intraventricular, Extraventricular) T1/neurocitoma (49).jpeg",tumor,"Neurocitoma (Central - Intraventricular, Extraventricular) T1",neurocitoma,MRI,T1,axial

@@ -1,0 +1,55 @@
+============================================================
+EVALUATION REPORT
+============================================================
+Total samples evaluated: 103920
+Overall accuracy (all fields correct): 10.14%
+
+Field-wise Accuracy:
+----------------------------------------
+diagnosis_name      :  72.74% (62566/86010)
+diagnosis_detailed  :  18.59% (15989/86010)
+modality            :  99.38% (85480/86010)
+plane               :  55.00% (47303/86010)
+
+Sample Breakdown by Model:
+----------------------------------------
+meta-llama/llama-4-maverick   :   9.47% (2037/21519)
+google/gemini-2.5-flash       :  10.62% (2284/21511)
+google/gemini-2.0-flash-001   :  13.91% (2985/21464)
+google/gemma-3-27b-it         :   6.57% (1413/21516)
+
+Per-Field Accuracy by Model:
+================================================================================
+Model                           diagnosis_name diagnosis_detailed        modality           plane
+-------------------------------------------------------------------------------------------------
+google/gemini-2.0-flash-001             74.1%          21.8%          99.0%          54.8%
+google/gemini-2.5-flash                 80.5%          20.3%          99.6%          54.9%
+google/gemma-3-27b-it                   58.9%          13.7%          99.4%          55.3%
+meta-llama/llama-4-maverick             77.5%          18.5%          99.5%          55.0%
+
+Detailed Per-Field Model Performance:
+--------------------------------------------------------------------------------
+
+DIAGNOSIS_NAME:
+  google/gemini-2.0-flash-001   :  74.12% (15909/21464)
+  google/gemini-2.5-flash       :  80.47% (17310/21511)
+  google/gemma-3-27b-it         :  58.90% (12673/21516)
+  meta-llama/llama-4-maverick   :  77.49% (16674/21519)
+
+DIAGNOSIS_DETAILED:
+  google/gemini-2.0-flash-001   :  21.79% (4678/21464)
+  google/gemini-2.5-flash       :  20.31% (4369/21511)
+  google/gemma-3-27b-it         :  13.72% (2951/21516)
+  meta-llama/llama-4-maverick   :  18.55% (3991/21519)
+
+MODALITY:
+  google/gemini-2.0-flash-001   :  99.04% (21259/21464)
+  google/gemini-2.5-flash       :  99.60% (21426/21511)
+  google/gemma-3-27b-it         :  99.38% (21383/21516)
+  meta-llama/llama-4-maverick   :  99.50% (21412/21519)
+
+PLANE:
+  google/gemini-2.0-flash-001   :  54.76% (11753/21464)
+  google/gemini-2.5-flash       :  54.91% (11811/21511)
+  google/gemma-3-27b-it         :  55.31% (11900/21516)
+  meta-llama/llama-4-maverick   :  55.02% (11839/21519)

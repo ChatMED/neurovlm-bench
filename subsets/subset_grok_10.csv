@@ -1,0 +1,11 @@
+dataset,file_path,class,original_class,subclass,modality,modality_subtype,plane
+stroke,stroke/Brain_Stroke_CT_Dataset/Normal/PNG/12402.png,normal,,,CT,,axial
+images-17,"images-17/Glioma (Astrocitoma, Ganglioglioma, Glioblastoma, Oligodendroglioma, Ependimoma) T1/glioma (5).jpg",tumor,"Glioma (Astrocitoma, Ganglioglioma, Glioblastoma, Oligodendroglioma, Ependimoma) T1",glioma,MRI,T1,axial
+images-44c,images-44c/Astrocitoma T1C+/2022-06-07 13_30_52-Window.jpg,tumor,astrocytoma,glioma,MRI,T1C+,
+images-17,"images-17/Meningioma (de Baixo Grau, Atípico, Anaplásico, Transicional) T1C+/meningioma (336).jpeg",tumor,"Meningioma (de Baixo Grau, Atípico, Anaplásico, Transicional) T1C+",meningioma,MRI,T1C+,axial
+sclerosis,sclerosis/MS/MS Saggital_crop/S1 (41).png,multiple sclerosis,,,MRI,FLAIR,sagittal
+sclerosis,sclerosis/MS/MS Axial_crop/A1 (160).png,multiple sclerosis,,,MRI,FLAIR,axial
+images-17,"images-17/Neurocitoma (Central - Intraventricular, Extraventricular) T1C+/neurocitoma (3).jpeg",tumor,"Neurocitoma (Central - Intraventricular, Extraventricular) T1C+",neurocitoma,MRI,T1C+,axial
+aisd,aisd/image/0226263/031.png,stroke,clear acute infarct,ischemic,CT,,axial
+figshare,figshare/brainTumorDataPublic_1-766_jpg/1/39.jpg,tumor,meningioma,meningioma,MRI,T1C+,
+figshare,figshare/brainTumorDataPublic_2299-3064_jpg/2/2993.jpg,tumor,glioma,glioma,MRI,T1C+,
