@@ -189,7 +189,7 @@ def load_jsonl(file_path: str, dataset: Optional[str] = None) -> List[Dict[str, 
 def normalize_str(x: Any) -> str:
     return str(x).strip().lower().replace("_", " ") if x is not None else 'undetermined'
 
-def normalize_modality_label(x: Any) -> str:
+def normalize_modality_label(x: Any, dataset: Optional[str] = None) -> str:
     """Normalize modality label for metric computation:
        - any value containing 'mri' -> 'mri'
        - else lowercased trimmed string
@@ -203,14 +203,14 @@ def normalize_modality_label(x: Any) -> str:
     
     return s
 
-def normalize_modality_subtype_label(x: Any) -> str:
+def normalize_modality_subtype_label(x: Any, dataset: Optional[str] = None) -> str:
     """Normalize modality subtype label for metric computation:
        - any value containing 'mri' -> 'mri'
        - else lowercased trimmed string
     """
     s = normalize_str(x)
     
-    if s == 't1+c':
+    if s == 't1+c' or s == 't1 c+':
         return 't1c+'
     if s == 't2-weighted':
         return 't2'
@@ -218,14 +218,16 @@ def normalize_modality_subtype_label(x: Any) -> str:
         return 't1'
     if 'post-contrast' in s or 'with contrast' in s:
         return 't1c+'
-        
+    if s == 'glas':
+        return 'undetermined'
+    
     # Whether to handle it like this???
     if s == 'null' or s == 'nan' or s is None or s == '' or s == 'None' or s == 'NaN' or s == 'n/a' or s == 'none' or s == 'not applicable' or s == 'brain':
         return 'undetermined'
     
     return s
 
-def normalize_plane_label(x: Any) -> str:
+def normalize_plane_label(x: Any, dataset: Optional[str] = None) -> str:
     """Normalize plane label for metric computation:
 
     """
@@ -239,27 +241,42 @@ def normalize_plane_label(x: Any) -> str:
         return 'undetermined'   
     return s
 
-def normalize_class_label(x: Any) -> str:
+def normalize_class_label(x: Any, dataset: Optional[str] = None) -> str:
     """Normalize class label for metric computation:
        - any value containing 'tumor' -> 'tumor'
        - else lowercased trimmed string
     """
-    s = normalize_str(x)
+    s = normalize_str(x)      
     
     if 'atrophy' in s:
-        return 'other abnormalities'
+        s='other abnormalities'
+    if s == 'brain mass' or s == 'mass' or s == 'stromal':
+        s='other abnormalities'
+    if s == 'multiplesclerosis':
+        s='multiple sclerosis'
     
     if any(tumor in s for tumor in SUBCLASS_BY_CLASS['tumor']):
-        return 'tumor'
+        s='tumor'
     if any(stroke in s for stroke in SUBCLASS_BY_CLASS['stroke']):
-        return 'stroke'
+        s='stroke'
+    
+    if s == 'tumors' or s == 'brain tumor':
+        s='tumor'
+    if s == 'brain': 
+        s='undetermined'
+    
     # Whether to handle it like this???
     if s == 'null' or s == 'nan' or s is None or s == '' or s == 'None':
-        return 'undetermined'
+        s='undetermined'
+    
+    #if dataset is not None:
+    #    if dataset == 'figshare':
+    #        if s != 'tumor' :#and s != 'undetermined':
+    #            s='nottumor'
     
     return s
 
-def normalize_subclass_label(x: Any) -> str:
+def normalize_subclass_label(x: Any, dataset: Optional[str] = None) -> str:
     """Normalize subclass label for metric computation
 
     """
@@ -305,6 +322,24 @@ def normalize_subclass_label(x: Any) -> str:
         return 'undetermined'
     if s == 'gliomatosis cerebri':
         return 'glioma'
+    
+    if s in ['brain parenchymal tumor','brain stem tumor','brain tumor','brainstem glioma','brainstem tumor',
+             'diffuse midline glioma','glial','likely brainstem tumor','malignant glioma']:
+        return 'glioma'
+    if s in ['cerebellar hemorrhage','hematoma','intracerebral hemorrhage','intraparenchymal hemorrhage',
+             'intracerebral','multiple small, ill-defined hypodense foci bilaterally within the cerebral hemispheres. these findings can be interpreted as a number of small hemorrhages or represent chronic changes. further evaluation is recommended to determine source.']:
+        return 'hemorrhagic'
+    if s == 'likely microadenomas':
+        return 'pituitary tumor'
+    if s in ['abnormal intracranial pressure','brain herniation','brain herniation and possible mass effect',
+             'brain lesion','brain mass','brainstem','cerebellar edema','cerebellar hamartoma','cerebellar lesion',
+             'cerebellar tumor','cerebral edema','epidermoid cyst','intracerebral','lesion','likely a brain herniation',
+             'likely a brain tumor (e.g., some type of brain tumor)','likely a lesion',
+             'likely an infiltrative lesion or edema associated with the mass',
+             'mixed','mixed round','multiple','multiple lesions','multiple sclerosis lesions','no further specified',
+             'periventricular lesions','region','ring-enhancing lesion','traumatic brain injury','tumorous lesion',
+             'unknown', 'other abnormalities']:
+        return 'undetermined'
     if s == 'gliosis':
         return 'undetermined'
     if 'hemangioblastoma' in s:
@@ -583,7 +618,7 @@ def calculate_accuracy_ci(correct: int, total: int, alpha: float = 0.05) -> Tupl
 def f1_score_ci(y_true: List[str], y_pred: List[str], labels: List[str], average='macro', n_bootstraps=100, alpha: float = 0.05, random_state=None, zero_division=0) -> Tuple[float, Tuple[float, float]]:
     """Return F1 score and 95% CI using bootstrap resampling."""
     rng = np.random.RandomState(random_state)
-    f1 = f1_score(y_true=y_true, y_pred=y_pred, labels=labels, average=average, zero_division=0)
+    f1 = f1_score(y_true=y_true, y_pred=y_pred, labels=labels, average=average, zero_division=zero_division)
     boot_scores = []
     n = len(y_true)
     if n == 0:
@@ -592,7 +627,7 @@ def f1_score_ci(y_true: List[str], y_pred: List[str], labels: List[str], average
         idx = rng.randint(0, n, n)
         y_t, y_p = np.array(y_true)[idx], np.array(y_pred)[idx]
         try:
-            boot_scores.append(f1_score(y_true=y_t, y_pred=y_p, labels=labels, average=average, zero_division=0))
+            boot_scores.append(f1_score(y_true=y_t, y_pred=y_p, labels=labels, average=average, zero_division=zero_division))
         except ValueError:
             continue  # skip cases with missing classes
     lower = np.percentile(boot_scores, 100 * alpha / 2)
@@ -1008,8 +1043,91 @@ def f1_with_abstention(
     y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
 
     # Compute F1; `labels=real_labels` ensures dummy is ignored as a class
-    f1 = f1_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=0)
+    f1 = f1_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
     return f1
+
+def precision_with_abstention(
+    y_true: List[str], y_pred: List[str], labels: List[str], abstain_label: str = "undetermined", average = None, zero_division = 0) -> float:
+    """
+    Precision with abstention with 95% CI: each abstained instance (pred == abstain_label)
+    is counted as a false negative for the correct class, but NOT as a
+    false positive for any class.
+
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate precision over. (Usually excludes `abstain_label`.)
+    abstain_label : str, default="none"
+        Label used for abstention in `y_pred`.
+    average : {"macro", "weighted"}
+        Averaging strategy for precision.
+
+    Returns
+    -------
+    float
+        precision score with abstention handled as described.
+    """
+    y_true_arr = np.array(y_true, dtype=object)
+    y_pred_arr = np.array(y_pred, dtype=object)
+
+    # Real labels to be scored (ensure abstain_label is not in them)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # Replace abstentions in predictions with dummy label:
+    # - For the true class, this is a FN (because prediction != true label)
+    # - Dummy is not in `labels`, so it does not generate FP for any class
+    y_pred_cleaned = y_pred_arr.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    # Compute precision; `labels=real_labels` ensures dummy is ignored as a class
+    prec = precision_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
+    return prec
+
+def recall_with_abstention(
+    y_true: List[str], y_pred: List[str], labels: List[str], abstain_label: str = "undetermined", average = None, zero_division = 0) -> float:
+    """
+    recall with abstention with 95% CI: each abstained instance (pred == abstain_label)
+    is counted as a false negative for the correct class, but NOT as a
+    false positive for any class.
+
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate recall over. (Usually excludes `abstain_label`.)
+    abstain_label : str, default="none"
+        Label used for abstention in `y_pred`.
+    average : {"macro", "weighted"}
+        Averaging strategy for recall.
+
+    Returns
+    -------
+    float
+        recall score with abstention handled as described.
+    """
+    y_true_arr = np.array(y_true, dtype=object)
+    y_pred_arr = np.array(y_pred, dtype=object)
+
+    # Real labels to be scored (ensure abstain_label is not in them)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # Replace abstentions in predictions with dummy label:
+    # - For the true class, this is a FN (because prediction != true label)
+    # - Dummy is not in `labels`, so it does not generate FP for any class
+    y_pred_cleaned = y_pred_arr.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    # Compute recall; `labels=real_labels` ensures dummy is ignored as a class
+    rec = recall_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
+    return rec
+
 
 def f1_with_abstention_ci(
     y_true: List[str],
@@ -1059,7 +1177,7 @@ def f1_with_abstention_ci(
     y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
 
     # Compute F1; `labels=real_labels` ensures dummy is ignored as a class
-    f1 = f1_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=0)
+    f1 = f1_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
 
     rng = np.random.RandomState(random_state)
 
@@ -1071,13 +1189,146 @@ def f1_with_abstention_ci(
         idx = rng.randint(0, n, n)
         y_t, y_p = y_true_arr[idx], y_pred_cleaned[idx]
         try:
-            boot_scores.append(f1_score(y_true=y_t, y_pred=y_p, labels=real_labels, average=average, zero_division=0))
+            boot_scores.append(f1_score(y_true=y_t, y_pred=y_p, labels=real_labels, average=average, zero_division=zero_division))
         except ValueError:
             continue  # skip cases with missing classes
     lower = np.percentile(boot_scores, 100 * alpha / 2)
     upper = np.percentile(boot_scores, 100 * (1 - alpha / 2))
     return f1, (lower, upper)
 
+def precision_with_abstention_ci(
+    y_true: List[str],
+    y_pred: List[str],
+    labels: List[str],
+    abstain_label: str = "undetermined",
+    average = None,
+    zero_division = 0,
+    n_bootstraps=100, 
+    alpha: float = 0.05, 
+    random_state=None
+    ) -> Tuple[float, Tuple[float, float]]:
+
+    """
+    precision with abstention: each abstained instance (pred == abstain_label)
+    is counted as a false negative for the correct class, but NOT as a
+    false positive for any class.
+
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate precision over. (Usually excludes `abstain_label`.)
+    abstain_label : str, default="none"
+        Label used for abstention in `y_pred`.
+    average : {"macro", "weighted"}
+        Averaging strategy for precision.
+
+    Returns
+    -------
+    float
+        precision score with abstention handled as described.
+    """
+    y_true_arr = np.array(y_true, dtype=object)
+    y_pred_arr = np.array(y_pred, dtype=object)
+
+    # Real labels to be scored (ensure abstain_label is not in them)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # Replace abstentions in predictions with dummy label:
+    # - For the true class, this is a FN (because prediction != true label)
+    # - Dummy is not in `labels`, so it does not generate FP for any class
+    y_pred_cleaned = y_pred_arr.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    # Compute precision; `labels=real_labels` ensures dummy is ignored as a class
+    prec = precision_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
+
+    rng = np.random.RandomState(random_state)
+
+    boot_scores = []
+    n = len(y_true)
+    if n == 0:
+        return 0.0, (0.0, 0.0)
+    for _ in range(n_bootstraps):
+        idx = rng.randint(0, n, n)
+        y_t, y_p = y_true_arr[idx], y_pred_cleaned[idx]
+        try:
+            boot_scores.append(precision_score(y_true=y_t, y_pred=y_p, labels=real_labels, average=average, zero_division=zero_division))
+        except ValueError:
+            continue  # skip cases with missing classes
+    lower = np.percentile(boot_scores, 100 * alpha / 2)
+    upper = np.percentile(boot_scores, 100 * (1 - alpha / 2))
+    return prec, (lower, upper)
+
+def recall_with_abstention_ci(
+    y_true: List[str],
+    y_pred: List[str],
+    labels: List[str],
+    abstain_label: str = "undetermined",
+    average = None,
+    zero_division = 0,
+    n_bootstraps=100, 
+    alpha: float = 0.05, 
+    random_state=None
+    ) -> Tuple[float, Tuple[float, float]]:
+
+    """
+    recall with abstention: each abstained instance (pred == abstain_label)
+    is counted as a false negative for the correct class, but NOT as a
+    false positive for any class.
+
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate recall over. (Usually excludes `abstain_label`.)
+    abstain_label : str, default="none"
+        Label used for abstention in `y_pred`.
+    average : {"macro", "weighted"}
+        Averaging strategy for recall.
+
+    Returns
+    -------
+    float
+        recall score with abstention handled as described.
+    """
+    y_true_arr = np.array(y_true, dtype=object)
+    y_pred_arr = np.array(y_pred, dtype=object)
+
+    # Real labels to be scored (ensure abstain_label is not in them)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # Replace abstentions in predictions with dummy label:
+    # - For the true class, this is a FN (because prediction != true label)
+    # - Dummy is not in `labels`, so it does not generate FP for any class
+    y_pred_cleaned = y_pred_arr.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    # Compute recall; `labels=real_labels` ensures dummy is ignored as a class
+    rec = recall_score(y_true_arr, y_pred_cleaned, labels=real_labels, average=average, zero_division=zero_division)
+
+    rng = np.random.RandomState(random_state)
+
+    boot_scores = []
+    n = len(y_true)
+    if n == 0:
+        return 0.0, (0.0, 0.0)
+    for _ in range(n_bootstraps):
+        idx = rng.randint(0, n, n)
+        y_t, y_p = y_true_arr[idx], y_pred_cleaned[idx]
+        try:
+            boot_scores.append(recall_score(y_true=y_t, y_pred=y_p, labels=real_labels, average=average, zero_division=zero_division))
+        except ValueError:
+            continue  # skip cases with missing classes
+    lower = np.percentile(boot_scores, 100 * alpha / 2)
+    upper = np.percentile(boot_scores, 100 * (1 - alpha / 2))
+    return rec, (lower, upper)
 
 def per_label_f1_with_abstention_ci(
     y_true: List[str],
@@ -1179,11 +1430,211 @@ def per_label_f1_with_abstention_ci(
             lower = upper = float(base_f1)
         results.append((float(base_f1), (lower, upper)))
 
-    print(results)
     return results
 
+def per_label_precision_with_abstention_ci(
+    y_true: List[str],
+    y_pred: List[str],
+    labels: List[str],
+    average: str = 'macro',          # kept for API symmetry; not used internally
+    abstain_label: str = "undetermined",
+    n_bootstraps: int = 100,
+    alpha: float = 0.05,
+    random_state: int = None,
+    zero_division: int = 0
+) -> List[Tuple[float, Tuple[float, float]]]:
+    """
+    Per-label precision with abstention and bootstrap 95% CI.
 
+    Each abstained instance (pred == abstain_label) is counted as a FN
+    for the correct class but NOT as a FP for any class.
 
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate precision over (usually excludes `abstain_label`).
+    abstain_label : str
+        Label used for abstention in `y_pred`.
+    n_bootstraps : int
+        Number of bootstrap resamples.
+    alpha : float
+        1 - confidence level (e.g. 0.05 for 95% CI).
+    random_state : int or None
+        Seed for RNG.
+    zero_division : int
+        Passed to sklearn.precision_score.
+
+    Returns
+    -------
+    List[(float, (float, float))]
+        For each label in `labels`, returns:
+        (per_label_precision_with_abstention, (lower_ci, upper_ci))
+    """
+    n = len(y_true)
+    if n == 0:
+        return []
+
+    y_t = np.array(y_true, dtype=object)
+    y_p = np.array(y_pred, dtype=object)
+
+    # Real labels (if abstain_label is not in `labels`, this is just `labels`)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # ----- Base per-label precision on full data -----
+    y_pred_cleaned = y_p.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    base_precs = precision_score(
+        y_true=y_t,
+        y_pred=y_pred_cleaned,
+        average=None,
+        labels=real_labels,
+        zero_division=zero_division
+    )  # shape: (len(real_labels),)
+
+    rng = np.random.RandomState(random_state)
+    boot_scores_per_label = [[] for _ in real_labels]
+
+    # ----- Bootstrap -----
+    for _ in range(n_bootstraps):
+        idx = rng.randint(0, n, n)
+        b_y_t = y_t[idx]
+        b_y_p = y_p[idx]
+
+        # Apply abstention logic in this bootstrap sample
+        b_y_p_cleaned = b_y_p.copy()
+        b_y_p_cleaned[b_y_p_cleaned == abstain_label] = '__dummy__'
+
+        # Per-label precision for this resample
+        precs = precision_score(
+            y_true=b_y_t,
+            y_pred=b_y_p_cleaned,
+            average=None,
+            labels=real_labels,
+            zero_division=zero_division
+        )
+
+        for j, s in enumerate(precs):
+            boot_scores_per_label[j].append(s)
+
+    # ----- Build CIs -----
+    results: List[Tuple[float, Tuple[float, float]]] = []
+    for base_prec, scores in zip(base_precs, boot_scores_per_label):
+        if scores:
+            lower = float(np.percentile(scores, 100 * alpha / 2))
+            upper = float(np.percentile(scores, 100 * (1 - alpha / 2)))
+        else:
+            # Fallback if no bootstrap values for that label
+            lower = upper = float(base_prec)
+        results.append((float(base_prec), (lower, upper)))
+
+    return results
+
+def per_label_recall_with_abstention_ci(
+    y_true: List[str],
+    y_pred: List[str],
+    labels: List[str],
+    average: str = 'macro',          # kept for API symmetry; not used internally
+    abstain_label: str = "undetermined",
+    n_bootstraps: int = 100,
+    alpha: float = 0.05,
+    random_state: int = None,
+    zero_division: int = 0
+) -> List[Tuple[float, Tuple[float, float]]]:
+    """
+    Per-label recall with abstention and bootstrap 95% CI.
+
+    Each abstained instance (pred == abstain_label) is counted as a FN
+    for the correct class but NOT as a FP for any class.
+
+    Parameters
+    ----------
+    y_true : List[str]
+        True labels.
+    y_pred : List[str]
+        Predicted labels (may contain `abstain_label`).
+    labels : List[str]
+        List of *real* labels to evaluate precision over (usually excludes `abstain_label`).
+    abstain_label : str
+        Label used for abstention in `y_pred`.
+    n_bootstraps : int
+        Number of bootstrap resamples.
+    alpha : float
+        1 - confidence level (e.g. 0.05 for 95% CI).
+    random_state : int or None
+        Seed for RNG.
+    zero_division : int
+        Passed to sklearn.recall_score.
+
+    Returns
+    -------
+    List[(float, (float, float))]
+        For each label in `labels`, returns:
+        (per_label_recall_with_abstention, (lower_ci, upper_ci))
+    """
+    n = len(y_true)
+    if n == 0:
+        return []
+
+    y_t = np.array(y_true, dtype=object)
+    y_p = np.array(y_pred, dtype=object)
+
+    # Real labels (if abstain_label is not in `labels`, this is just `labels`)
+    real_labels = [lab for lab in labels if lab != abstain_label]
+
+    # ----- Base per-label recall on full data -----
+    y_pred_cleaned = y_p.copy()
+    y_pred_cleaned[y_pred_cleaned == abstain_label] = '__dummy__'
+
+    base_recs = recall_score(
+        y_true=y_t,
+        y_pred=y_pred_cleaned,
+        average=None,
+        labels=real_labels,
+        zero_division=zero_division
+    )  # shape: (len(real_labels),)
+
+    rng = np.random.RandomState(random_state)
+    boot_scores_per_label = [[] for _ in real_labels]
+
+    # ----- Bootstrap -----
+    for _ in range(n_bootstraps):
+        idx = rng.randint(0, n, n)
+        b_y_t = y_t[idx]
+        b_y_p = y_p[idx]
+
+        # Apply abstention logic in this bootstrap sample
+        b_y_p_cleaned = b_y_p.copy()
+        b_y_p_cleaned[b_y_p_cleaned == abstain_label] = '__dummy__'
+
+        # Per-label precision for this resample
+        recs = recall_score(
+            y_true=b_y_t,
+            y_pred=b_y_p_cleaned,
+            average=None,
+            labels=real_labels,
+            zero_division=zero_division
+        )
+
+        for j, s in enumerate(recs):
+            boot_scores_per_label[j].append(s)
+
+    # ----- Build CIs -----
+    results: List[Tuple[float, Tuple[float, float]]] = []
+    for base_rec, scores in zip(base_recs, boot_scores_per_label):
+        if scores:
+            lower = float(np.percentile(scores, 100 * alpha / 2))
+            upper = float(np.percentile(scores, 100 * (1 - alpha / 2)))
+        else:
+            # Fallback if no bootstrap values for that label
+            lower = upper = float(base_rec)
+        results.append((float(base_rec), (lower, upper)))
+
+    return results
 
 # -----------------
 # STEP 1: Collect aligned predictions
@@ -1391,7 +1842,7 @@ def summarize_pairwise_matrix(results, metric="accuracy", alpha=0.05, save_path=
 # ----------------------------
 # Core evaluation
 # ----------------------------
-def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
+def evaluate(data: List[Dict[str, Any]] , out_path: str, dataset: Optional[str] = None) -> Dict[str, Any]:
     field_mappings = {
         "diagnosis_name": "class",
         "diagnosis_detailed": "subclass",
@@ -1551,8 +2002,12 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         invalid_vals = {None, 'null', 'nan', ''}
         
         if gt_cls not in invalid_vals:
-            by_model_true[model].append(normalize_class_label(gt_cls))
-            by_model_pred[model].append(normalize_class_label(pr_cls))
+            if dataset is not None:
+                by_model_true[model].append(normalize_class_label(gt_cls,dataset))
+                by_model_pred[model].append(normalize_class_label(pr_cls,dataset))
+            else:
+                by_model_true[model].append(normalize_class_label(gt_cls))
+                by_model_pred[model].append(normalize_class_label(pr_cls))
             by_model_conf[model].append(conf_f if conf_f is not None else 0.0)
         
         by_model_true_unfiltered[model].append(normalize_class_label(gt_cls))
@@ -1563,8 +2018,12 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         gt_sub = metadata.get("subclass")
         pr_sub = parsed.get("diagnosis_detailed")
         if gt_sub not in invalid_vals: # and pr_sub is not None:
-            by_model_true_sub[model].append(normalize_subclass_label(gt_sub))
-            by_model_pred_sub[model].append(normalize_subclass_label(pr_sub))
+            if dataset is not None:
+                by_model_true_sub[model].append(normalize_subclass_label(gt_sub,dataset))
+                by_model_pred_sub[model].append(normalize_subclass_label(pr_sub,dataset))
+            else:
+                by_model_true_sub[model].append(normalize_subclass_label(gt_sub))
+                by_model_pred_sub[model].append(normalize_subclass_label(pr_sub))
             by_model_conf_sub[model].append(conf_f if conf_f is not None else 0.0)
 
         by_model_true_sub_unfiltered[model].append(normalize_subclass_label(gt_sub))
@@ -1575,8 +2034,12 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         gt_mod = metadata.get("modality")
         pr_mod = parsed.get("modality")
         if gt_mod not in invalid_vals: # and pr_mod is not None:
-            by_model_true_mod[model].append(normalize_modality_label(gt_mod))
-            by_model_pred_mod[model].append(normalize_modality_label(pr_mod))
+            if dataset is not None:
+                by_model_true_mod[model].append(normalize_modality_label(gt_mod,dataset))
+                by_model_pred_mod[model].append(normalize_modality_label(pr_mod,dataset))
+            else:
+                by_model_true_mod[model].append(normalize_modality_label(gt_mod))
+                by_model_pred_mod[model].append(normalize_modality_label(pr_mod))
         
         by_model_true_mod_unfiltered[model].append(normalize_modality_label(gt_mod))
         by_model_pred_mod_unfiltered[model].append(normalize_modality_label(pr_mod))
@@ -1585,8 +2048,12 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         gt_mod_sub = metadata.get("modality_subtype")
         pr_mod_sub = parsed.get("specialized_sequence")
         if gt_mod_sub not in invalid_vals: # and pr_mod is not None:
-            by_model_true_mod_sub[model].append(normalize_modality_subtype_label(gt_mod_sub))
-            by_model_pred_mod_sub[model].append(normalize_modality_subtype_label(pr_mod_sub))
+            if dataset is not None:
+                by_model_true_mod_sub[model].append(normalize_modality_subtype_label(gt_mod_sub,dataset))
+                by_model_pred_mod_sub[model].append(normalize_modality_subtype_label(pr_mod_sub,dataset))
+            else:
+                by_model_true_mod_sub[model].append(normalize_modality_subtype_label(gt_mod_sub))
+                by_model_pred_mod_sub[model].append(normalize_modality_subtype_label(pr_mod_sub))
         
         by_model_true_mod_sub_unfiltered[model].append(normalize_modality_subtype_label(gt_mod_sub))
         by_model_pred_mod_sub_unfiltered[model].append(normalize_modality_subtype_label(pr_mod_sub))
@@ -1595,8 +2062,12 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         gt_plane = metadata.get("axial_plane")
         pr_plane = parsed.get("plane")
         if gt_plane not in invalid_vals: # and pr_plane is not None:
-            by_model_true_plane[model].append(normalize_plane_label(gt_plane))
-            by_model_pred_plane[model].append(normalize_plane_label(pr_plane))
+            if dataset is not None:
+                by_model_true_plane[model].append(normalize_plane_label(gt_plane,dataset))
+                by_model_pred_plane[model].append(normalize_plane_label(pr_plane,dataset))
+            else:
+                by_model_true_plane[model].append(normalize_plane_label(gt_plane))
+                by_model_pred_plane[model].append(normalize_plane_label(pr_plane))
         
         by_model_true_plane_unfiltered[model].append(normalize_plane_label(gt_plane))
         by_model_pred_plane_unfiltered[model].append(normalize_plane_label(pr_plane))
@@ -1657,7 +2128,17 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             + list(by_model_true_plane_unfiltered.keys())
         )
     )
-
+    
+    # mapping for acronyms / special cases
+    label_map = {
+        "mri": "MRI",
+        "flair": "FLAIR",
+        "t1": "T1",
+        "t1c+": "T1C+",
+        "t2": "T2",
+        "ct": "CT"
+        }
+    
     for model in all_models:
         # ----- CLASS (diagnosis_name) -----
         y_t = by_model_true.get(model, [])
@@ -1676,6 +2157,7 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         
         print(model)
         print('class ' + str(len(labels_present_cls)) + ' ' + str(labels_present_cls))
+        
         
         
         if y_t and y_p:
@@ -1704,11 +2186,17 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             uncertainty = per_label_uncertainty(y_t, y_p, labels=labels_present_cls)["global"]
 
-            prec_c = precision_score(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
-            prec_c_ci = per_label_precision_score_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
+            #prec_c = precision_score(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
+            #prec_c_ci = per_label_precision_score_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
 
-            rec_c = recall_score(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
-            rec_c_ci = per_label_recall_score_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
+            #rec_c = recall_score(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
+            #rec_c_ci = per_label_recall_score_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
+            
+            prec_c = precision_with_abstention(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0, abstain_label = "undetermined")
+            prec_c_ci = per_label_precision_with_abstention_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0, abstain_label = "undetermined")
+
+            rec_c = recall_with_abstention(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0, abstain_label = "undetermined")
+            rec_c_ci = per_label_recall_with_abstention_ci(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0, abstain_label = "undetermined")
             
             f1_c = f1_score(y_t, y_p, average=None, labels=labels_present_cls, zero_division=0)
             f1_c_ci = per_label_f1_score_ci(y_t, y_p, labels=labels_present_cls, average=None, zero_division=0)
@@ -1723,27 +2211,32 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             acc_c = per_label_balanced_accuracy(y_t, y_p, labels = labels_present_cls)
             acc_c_ci = per_label_balanced_accuracy_ci(y_t, y_p, labels = labels_present_cls)
             
-
             support_c = [int(sum(1 for t in y_t if t == lab)) for lab in labels_present_cls]
 
             # overall (macro) metrics for diagnosis_name
-            overall_prec_macro_cls = float(precision_score(y_t, y_p, average="macro", zero_division=0))
-            overall_prec_macro_cls_ci = precision_score_ci(y_t, y_p, labels = labels_present_cls, average="macro", zero_division=0)
+            #overall_prec_macro_cls = float(precision_score(y_t, y_p, average="macro", zero_division=0))
+            #overall_prec_macro_cls_ci = precision_score_ci(y_t, y_p, labels = np.unique(y_t), average="macro", zero_division=0)
             
-            overall_rec_macro_cls = float(recall_score(y_t, y_p, average="macro", zero_division=0))
-            overall_rec_macro_cls_ci = recall_score_ci(y_t, y_p, labels = labels_present_cls, average="macro", zero_division=0)
+            #overall_rec_macro_cls = float(recall_score(y_t, y_p, average="macro", zero_division=0))
+            #overall_rec_macro_cls_ci = recall_score_ci(y_t, y_p, labels = np.unique(y_t), average="macro", zero_division=0)
             
-            overall_f1_macro_cls = float(f1_score(y_t, y_p, average="macro", zero_division=0))
-            overall_f1_macro_cls_ci = f1_score_ci(y_t, y_p, labels = labels_present_cls, average="macro", zero_division=0)
+            overall_prec_macro_cls = precision_with_abstention(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t))
+            overall_prec_macro_cls_ci = precision_with_abstention_ci(y_t, y_p, labels = np.unique(y_t), average="macro", zero_division=0, abstain_label = "undetermined")
             
-            overall_f1_macro_abstention_cls = float(f1_with_abstention(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_cls))
-            overall_f1_macro_abstention_cls_ci = f1_with_abstention_ci(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_cls)
+            overall_rec_macro_cls = recall_with_abstention(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t))
+            overall_rec_macro_cls_ci = recall_with_abstention_ci(y_t, y_p, labels = np.unique(y_t), average="macro", zero_division=0, abstain_label = "undetermined")
             
-            overall_f1_weighted_cls = float(f1_score(y_t, y_p, average="weighted", zero_division=0))
-            overall_f1_weighted_cls_ci = f1_score_ci(y_t, y_p, labels = labels_present_cls, average="weighted", zero_division=0)
+            overall_f1_macro_cls = float(f1_score(y_t, y_p, average="macro", zero_division=0, labels=np.unique(y_t)))
+            overall_f1_macro_cls_ci = f1_score_ci(y_t, y_p, labels = np.unique(y_t), average="macro", zero_division=0)
             
-            overall_f1_weighted_abstention_cls = float(f1_with_abstention(y_t, y_p, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_cls))
-            overall_f1_weighted_abstention_cls_ci = f1_with_abstention_ci(y_t, y_p, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_cls)
+            overall_f1_macro_abstention_cls = float(f1_with_abstention(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t)))
+            overall_f1_macro_abstention_cls_ci = f1_with_abstention_ci(y_t, y_p, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t))
+            
+            overall_f1_weighted_cls = float(f1_score(y_t, y_p, average="weighted", zero_division=0, labels = np.unique(y_t)))
+            overall_f1_weighted_cls_ci = f1_score_ci(y_t, y_p, labels = np.unique(y_t), average="weighted", zero_division=0)
+            
+            overall_f1_weighted_abstention_cls = float(f1_with_abstention(y_t, y_p, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t)))
+            overall_f1_weighted_abstention_cls_ci = f1_with_abstention_ci(y_t, y_p, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t))
             
             
             overall_acc_cls = acc
@@ -1762,32 +2255,36 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                 ece_val = float("nan")
 
             # confusion matrix
+            # normalize labels: acronyms → uppercase, others → Capitalized
+            labels_present_cls_norm = [label_map.get(lbl.lower(), lbl.capitalize()) for lbl in labels_present_cls]
+            
             cm_to_plot = confusion_matrix(y_t, y_p, labels=labels_present_cls, normalize="all")#.tolist()
             cm = cm_to_plot.tolist()
             cm_rows_to_plot = confusion_matrix(y_t, y_p, labels=labels_present_cls, normalize="true")#.tolist()
             
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_cls)+2, len(labels_present_cls)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_to_plot, display_labels=labels_present_cls) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_to_plot, display_labels=labels_present_cls_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
+            #plt.grid(False)
             plt.title(model + ' per diagnosis name')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normall_class_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
             plt.close()
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_cls)+2, len(labels_present_cls)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_rows_to_plot, display_labels=labels_present_cls) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_rows_to_plot, display_labels=labels_present_cls_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per diagnosis name')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normrows_class_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -1823,11 +2320,18 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         print('subclass ' + str(len(labels_present_sub)) + ' ' + str(labels_present_sub))
         
         if y_t_sub and y_p_sub:
-            prec_s = precision_score(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
-            prec_s_ci = per_label_precision_score_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
+            #prec_s = precision_score(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
+            #prec_s_ci = per_label_precision_score_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
 
-            rec_s = recall_score(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
-            rec_s_ci = per_label_recall_score_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
+            #rec_s = recall_score(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
+            #rec_s_ci = per_label_recall_score_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
+            
+            prec_s = precision_with_abstention(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0, abstain_label = "undetermined")
+            prec_s_ci = per_label_precision_with_abstention_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0, abstain_label = "undetermined")
+
+            rec_s = recall_with_abstention(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0, abstain_label = "undetermined")
+            rec_s_ci = per_label_recall_with_abstention_ci(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0, abstain_label = "undetermined")
+            
             
             f1_s = f1_score(y_t_sub, y_p_sub, average=None, labels=labels_present_sub, zero_division=0)
             f1_s_ci = per_label_f1_score_ci(y_t_sub, y_p_sub, labels=labels_present_sub, average=None, zero_division=0)
@@ -1844,27 +2348,38 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             support_s = [int(sum(1 for t in y_t_sub if t == lab)) for lab in labels_present_sub]
             # overall (macro) metrics for subclass
-            overall_prec_macro_sub = float(precision_score(y_t_sub, y_p_sub, average="macro", zero_division=0))
-            overall_prec_macro_sub_ci = precision_score_ci(y_t_sub, y_p_sub, labels = labels_present_sub, average="macro", zero_division=0)
+            #overall_prec_macro_sub = float(precision_score(y_t_sub, y_p_sub, average="macro", zero_division=0))
+            #overall_prec_macro_sub_ci = precision_score_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="macro", zero_division=0)
             
-            overall_rec_macro_sub = float(recall_score(y_t_sub, y_p_sub, average="macro", zero_division=0))
-            overall_rec_macro_sub_ci = recall_score_ci(y_t_sub, y_p_sub, labels = labels_present_sub, average="macro", zero_division=0)
+            #overall_rec_macro_sub = float(recall_score(y_t_sub, y_p_sub, average="macro", zero_division=0))
+            #overall_rec_macro_sub_ci = recall_score_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="macro", zero_division=0)
             
-            overall_f1_macro_sub = float(f1_score(y_t_sub, y_p_sub, average="macro", zero_division=0))
-            overall_f1_macro_sub_ci = f1_score_ci(y_t_sub, y_p_sub, labels = labels_present_sub, average="macro", zero_division=0)
+            overall_prec_macro_sub = precision_with_abstention(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub))
+            overall_prec_macro_sub_ci = precision_with_abstention_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="macro", zero_division=0, abstain_label = "undetermined")
             
-            overall_f1_macro_abstention_sub = float(f1_with_abstention(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_sub))
-            overall_f1_macro_abstention_sub_ci = f1_with_abstention_ci(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_sub)
+            overall_rec_macro_sub = recall_with_abstention(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub))
+            overall_rec_macro_sub_ci = recall_with_abstention_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="macro", zero_division=0, abstain_label = "undetermined")
             
-            overall_f1_weighted_sub = float(f1_score(y_t_sub, y_p_sub, average="weighted", zero_division=0))
-            overall_f1_weighted_sub_ci = f1_score_ci(y_t_sub, y_p_sub, labels = labels_present_sub, average="weighted", zero_division=0)
             
-            overall_f1_weighted_abstention_sub = float(f1_with_abstention(y_t_sub, y_p_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_sub))
-            overall_f1_weighted_abstention_sub_ci = f1_with_abstention_ci(y_t_sub, y_p_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_sub)
+            overall_f1_macro_sub = float(f1_score(y_t_sub, y_p_sub, average="macro", zero_division=0, labels = np.unique(y_t_sub)))
+            overall_f1_macro_sub_ci = f1_score_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="macro", zero_division=0)
+            
+            overall_f1_macro_abstention_sub = float(f1_with_abstention(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub)))
+            overall_f1_macro_abstention_sub_ci = f1_with_abstention_ci(y_t_sub, y_p_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub))
+            
+            overall_f1_weighted_sub = float(f1_score(y_t_sub, y_p_sub, average="weighted", zero_division=0, labels = np.unique(y_t_sub)))
+            overall_f1_weighted_sub_ci = f1_score_ci(y_t_sub, y_p_sub, labels = np.unique(y_t_sub), average="weighted", zero_division=0)
+            
+            overall_f1_weighted_abstention_sub = float(f1_with_abstention(y_t_sub, y_p_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub)))
+            overall_f1_weighted_abstention_sub_ci = f1_with_abstention_ci(y_t_sub, y_p_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_sub))
             
             overall_acc_sub = balanced_accuracy_score(y_t_sub, y_p_sub)
             overall_acc_sub_ci = balanced_accuracy_score_ci(y_t_sub, y_p_sub)
             #overall_acc_sub = float(np.mean([t == p for t, p in zip(y_t_sub, y_p_sub)]))            
+            
+            
+            # normalize labels: acronyms → uppercase, others → Capitalized
+            labels_present_sub_norm = [label_map.get(lbl.lower(), lbl.capitalize()) for lbl in labels_present_sub]
             
             cm_sub_to_plot = confusion_matrix(y_t_sub, y_p_sub, labels=labels_present_sub, normalize="all")#.tolist()
             cm_sub = cm_sub_to_plot.tolist()
@@ -1872,13 +2387,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                        
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_sub)+2, len(labels_present_sub)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_sub_to_plot, display_labels=labels_present_sub) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_sub_to_plot, display_labels=labels_present_sub_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per detailed diagnosis')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normall_subclass_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -1886,13 +2401,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_sub)+2, len(labels_present_sub)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_sub_rows_to_plot, display_labels=labels_present_sub) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_sub_rows_to_plot, display_labels=labels_present_sub_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per detailed diagnosis')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normrows_subclass_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -1942,11 +2457,18 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         print('modality ' +  str(len(labels_present_mod)) + ' ' + str(labels_present_mod))
         
         if y_t_mod and y_p_mod:
-            prec_m = precision_score(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
-            prec_m_ci = per_label_precision_score_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
+            #prec_m = precision_score(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
+            #prec_m_ci = per_label_precision_score_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
 
-            rec_m = recall_score(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
-            rec_m_ci = per_label_recall_score_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
+            #rec_m = recall_score(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
+            #rec_m_ci = per_label_recall_score_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
+            
+            prec_m = precision_with_abstention(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0, abstain_label = "undetermined")
+            prec_m_ci = per_label_precision_with_abstention_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0, abstain_label = "undetermined")
+
+            rec_m = recall_with_abstention(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0, abstain_label = "undetermined")
+            rec_m_ci = per_label_recall_with_abstention_ci(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0, abstain_label = "undetermined")
+            
             
             f1_m = f1_score(y_t_mod, y_p_mod, average=None, labels=labels_present_mod, zero_division=0)
             f1_m_ci = per_label_f1_score_ci(y_t_mod, y_p_mod, labels=labels_present_mod, average=None, zero_division=0)
@@ -1963,27 +2485,36 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             support_m = [int(sum(1 for t in y_t_mod if t == lab)) for lab in labels_present_mod]
             
             # overall (macro) metrics for modality
-            overall_prec_macro_mod = float(precision_score(y_t_mod, y_p_mod, average="macro", zero_division=0))
-            overall_prec_macro_mod_ci = precision_score_ci(y_t_mod, y_p_mod, labels = labels_present_mod, average="macro", zero_division=0)
+            #overall_prec_macro_mod = float(precision_score(y_t_mod, y_p_mod, average="macro", zero_division=0))
+            #overall_prec_macro_mod_ci = precision_score_ci(y_t_mod, y_p_mod, labels = np.unique(y_t_mod), average="macro", zero_division=0)
             
-            overall_rec_macro_mod = float(recall_score(y_t_mod, y_p_mod, average="macro", zero_division=0))
-            overall_rec_macro_mod_ci = recall_score_ci(y_t_mod, y_p_mod, labels = labels_present_mod, average="macro", zero_division=0)
+            #overall_rec_macro_mod = float(recall_score(y_t_mod, y_p_mod, average="macro", zero_division=0))
+            #overall_rec_macro_mod_ci = recall_score_ci(y_t_mod, y_p_mod, labels = np.unique(y_t_mod), average="macro", zero_division=0)
+            
+            overall_prec_macro_mod = precision_with_abstention(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod))
+            overall_prec_macro_mod_ci = precision_with_abstention_ci(y_t_mod, y_p_mod, labels = np.unique(y_t_mod), average="macro", zero_division=0, abstain_label = "undetermined")
+            
+            overall_rec_macro_mod = recall_with_abstention(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod))
+            overall_rec_macro_mod_ci = recall_with_abstention_ci(y_t_mod, y_p_mod, labels = np.unique(y_t_mod), average="macro", zero_division=0, abstain_label = "undetermined")
             
             overall_f1_macro_mod = float(f1_score(y_t_mod, y_p_mod, average="macro", zero_division=0))
-            overall_f1_macro_mod_ci = f1_score_ci(y_t_mod, y_p_mod, labels = labels_present_mod, average="macro", zero_division=0)
+            overall_f1_macro_mod_ci = f1_score_ci(y_t_mod, y_p_mod, labels = np.unique(y_t_mod), average="macro", zero_division=0)
             
-            overall_f1_macro_abstention_mod = float(f1_with_abstention(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod))
-            overall_f1_macro_abstention_mod_ci = f1_with_abstention_ci(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod)
+            overall_f1_macro_abstention_mod = float(f1_with_abstention(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod)))
+            overall_f1_macro_abstention_mod_ci = f1_with_abstention_ci(y_t_mod, y_p_mod, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod))
             
             overall_f1_weighted_mod = float(f1_score(y_t_mod, y_p_mod, average="weighted", zero_division=0))
             overall_f1_weighted_mod_ci = f1_score_ci(y_t_mod, y_p_mod, labels = labels_present_mod, average="weighted", zero_division=0)
             
-            overall_f1_weighted_abstention_mod = float(f1_with_abstention(y_t_mod, y_p_mod, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod))
-            overall_f1_weighted_abstention_mod_ci = f1_with_abstention_ci(y_t_mod, y_p_mod, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod)
+            overall_f1_weighted_abstention_mod = float(f1_with_abstention(y_t_mod, y_p_mod, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod)))
+            overall_f1_weighted_abstention_mod_ci = f1_with_abstention_ci(y_t_mod, y_p_mod, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod))
             
             overall_acc_mod = balanced_accuracy_score(y_t_mod, y_p_mod)
             overall_acc_mod_ci = balanced_accuracy_score_ci(y_t_mod, y_p_mod)
             #overall_acc_mod = float(np.mean([t == p for t, p in zip(y_t_mod, y_p_mod)]))
+            
+            # normalize labels: acronyms → uppercase, others → Capitalized
+            labels_present_mod_norm = [label_map.get(lbl.lower(), lbl.capitalize()) for lbl in labels_present_mod]
             
             cm_mod_to_plot = confusion_matrix(y_t_mod, y_p_mod, labels=labels_present_mod, normalize="all")#.tolist()
             cm_mod = cm_mod_to_plot.tolist()
@@ -1992,13 +2523,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                        
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_mod)+2, len(labels_present_mod)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_to_plot, display_labels=labels_present_mod) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_to_plot, display_labels=labels_present_mod_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per modality')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normall_modality_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2006,13 +2537,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_mod)+2, len(labels_present_mod)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_rows_to_plot, display_labels=labels_present_mod) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_rows_to_plot, display_labels=labels_present_mod_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per modality')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normrows_modality_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2024,11 +2555,11 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                 y_bin_mod = np.array([1 if t == p else 0 for t, p in zip(y_t_mod, y_p_mod)], dtype=float)
                 conf_arr_mod = np.clip(np.array([c if c is not None else 0.0 for c in y_c_mod], dtype=float), 0, 1)
                 brier_mod = float(brier_score_loss(y_bin_mod, conf_arr_mod))
-                auc_mod = float(roc_auc_score(y_bin_mod, conf_arr_mod)) if len(np.unique(y_bin_mod)) == 2 else float("nan")
+                auc_mod = float(roc_auc_score(y_bin_mod, conf_arr_mod)) if len(np.unique(y_bin_mod)) == 2 else 0.0
             except Exception:
-                brier_mod = float("nan")
-                auc_mod = float("nan")
-                ece_mod = float("nan")
+                brier_mod = 0.0
+                auc_mod = 0.0
+                ece_mod = 0.0
                 
             # no confidences for modality -> calibration placeholders
             #auc_mod = float("nan"); ece_mod = float("nan"); brier_mod = float("nan")
@@ -2037,9 +2568,9 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             acc_m = []
             support_m = []
             labels_present_mod = []
-            overall_prec_macro_mod = overall_rec_macro_mod = overall_f1_macro_mod = overall_f1_macro_abstention_mod = overall_f1_weighted_mod = overall_f1_weighted_abstention_mod = overall_acc_mod = float("nan")
+            overall_prec_macro_mod = overall_rec_macro_mod = overall_f1_macro_mod = overall_f1_macro_abstention_mod = overall_f1_weighted_mod = overall_f1_weighted_abstention_mod = overall_acc_mod = 0.0
             cm_mod = []
-            auc_mod = ece_mod = brier_mod = float("nan")
+            auc_mod = ece_mod = brier_mod = 0.0
             
             prec_m_ci = rec_m_ci = f1_m_ci = f1_m_abstention_ci = (0.0, (0.0, 0.0))
             acc_m_ci = (0.0, (0.0, 0.0))
@@ -2059,12 +2590,18 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         print('modality subtype ' +  str(len(labels_present_mod_sub)) + ' ' + str(labels_present_mod_sub))
         
         if y_t_mod_sub and y_p_mod_sub:
-            prec_m_sub = precision_score(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
-            prec_m_sub_ci = per_label_precision_score_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
+            #prec_m_sub = precision_score(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
+            #prec_m_sub_ci = per_label_precision_score_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
 
-            rec_m_sub = recall_score(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
-            rec_m_sub_ci = per_label_recall_score_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
+            #rec_m_sub = recall_score(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
+            #rec_m_sub_ci = per_label_recall_score_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
             
+            prec_m_sub = precision_with_abstention(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0, abstain_label = "undetermined")
+            prec_m_sub_ci = per_label_precision_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0, abstain_label = "undetermined")
+
+            rec_m_sub = recall_with_abstention(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0, abstain_label = "undetermined")
+            rec_m_sub_ci = per_label_recall_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0, abstain_label = "undetermined")
+                        
             f1_m_sub = f1_score(y_t_mod_sub, y_p_mod_sub, average=None, labels=labels_present_mod_sub, zero_division=0)
             f1_m_sub_ci = per_label_f1_score_ci(y_t_mod_sub, y_p_mod_sub, labels=labels_present_mod_sub, average=None, zero_division=0)
             
@@ -2080,28 +2617,38 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             support_m_sub = [int(sum(1 for t in y_t_mod_sub if t == lab)) for lab in labels_present_mod_sub]
             
             # overall (macro) metrics for modality subtype
-            overall_prec_macro_mod_sub = float(precision_score(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0))
-            overall_prec_macro_mod_sub_ci = precision_score_ci(y_t_mod_sub, y_p_mod_sub, labels = labels_present_mod_sub, average="macro", zero_division=0)
+            #overall_prec_macro_mod_sub = float(precision_score(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0))
+            #overall_prec_macro_mod_sub_ci = precision_score_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="macro", zero_division=0)
             
-            overall_rec_macro_mod_sub = float(recall_score(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0))
-            overall_rec_macro_mod_sub_ci = recall_score_ci(y_t_mod_sub, y_p_mod_sub, labels = labels_present_mod_sub, average="macro", zero_division=0)
+            #overall_rec_macro_mod_sub = float(recall_score(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0))
+            #overall_rec_macro_mod_sub_ci = recall_score_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="macro", zero_division=0)
+            
+            overall_prec_macro_mod_sub = precision_with_abstention(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub))
+            overall_prec_macro_mod_sub_ci = precision_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="macro", zero_division=0, abstain_label = "undetermined")
+            
+            overall_rec_macro_mod_sub = recall_with_abstention(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub))
+            overall_rec_macro_mod_sub_ci = recall_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="macro", zero_division=0, abstain_label = "undetermined")
+            
             
             overall_f1_macro_mod_sub = float(f1_score(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0))
-            overall_f1_macro_mod_sub_ci = f1_score_ci(y_t_mod_sub, y_p_mod_sub, labels = labels_present_mod_sub, average="macro", zero_division=0)
+            overall_f1_macro_mod_sub_ci = f1_score_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="macro", zero_division=0)
             
-            overall_f1_macro_abstention_mod_sub = float(f1_with_abstention(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod_sub))
-            overall_f1_macro_abstention_mod_sub_ci = f1_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod_sub)
+            overall_f1_macro_abstention_mod_sub = float(f1_with_abstention(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub)))
+            overall_f1_macro_abstention_mod_sub_ci = f1_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub))
             
             overall_f1_weighted_mod_sub = float(f1_score(y_t_mod_sub, y_p_mod_sub, average="weighted", zero_division=0))
-            overall_f1_weighted_mod_sub_ci = f1_score_ci(y_t_mod_sub, y_p_mod_sub, labels = labels_present_mod_sub, average="weighted", zero_division=0)
+            overall_f1_weighted_mod_sub_ci = f1_score_ci(y_t_mod_sub, y_p_mod_sub, labels = np.unique(y_t_mod_sub), average="weighted", zero_division=0)
             
-            overall_f1_weighted_abstention_mod_sub = float(f1_with_abstention(y_t_mod_sub, y_p_mod_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod_sub))
-            overall_f1_weighted_abstention_mod_sub_ci = f1_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_mod_sub)
+            overall_f1_weighted_abstention_mod_sub = float(f1_with_abstention(y_t_mod_sub, y_p_mod_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub)))
+            overall_f1_weighted_abstention_mod_sub_ci = f1_with_abstention_ci(y_t_mod_sub, y_p_mod_sub, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_mod_sub))
             
             overall_acc_mod_sub = balanced_accuracy_score(y_t_mod_sub, y_p_mod_sub)
             overall_acc_mod_sub_ci = balanced_accuracy_score_ci(y_t_mod_sub, y_p_mod_sub)
             
             #overall_acc_mod_sub = float(np.mean([t == p for t, p in zip(y_t_mod_sub, y_p_mod_sub)]))
+            # normalize labels: acronyms → uppercase, others → Capitalized
+            labels_present_mod_sub_norm = [label_map.get(lbl.lower(), lbl.capitalize()) for lbl in labels_present_mod_sub]
+            
             cm_mod_sub_to_plot = confusion_matrix(y_t_mod_sub, y_p_mod_sub, labels=labels_present_mod_sub, normalize="all")#.tolist()
             cm_mod_sub = cm_mod_sub_to_plot.tolist()
             cm_mod_sub_rows_to_plot = confusion_matrix(y_t_mod_sub, y_p_mod_sub, labels=labels_present_mod_sub, normalize="true")#.tolist()
@@ -2109,13 +2656,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                        
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_mod_sub)+2, len(labels_present_mod_sub)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_sub_to_plot, display_labels=labels_present_mod_sub) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_sub_to_plot, display_labels=labels_present_mod_sub_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per specialized sequence')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normall_modality_sub_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2123,13 +2670,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_mod_sub)+2, len(labels_present_mod_sub)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_sub_rows_to_plot, display_labels=labels_present_mod_sub) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_mod_sub_rows_to_plot, display_labels=labels_present_mod_sub_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per specialized sequence')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normrows_modality_sub_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2141,11 +2688,11 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                 y_bin_mod_sub = np.array([1 if t == p else 0 for t, p in zip(y_t_mod_sub, y_p_mod_sub)], dtype=float)
                 conf_arr_mod_sub = np.clip(np.array([c if c is not None else 0.0 for c in y_c_mod_sub], dtype=float), 0, 1)
                 brier_mod_sub = float(brier_score_loss(y_bin_mod_sub, conf_arr_mod_sub))
-                auc_mod_sub = float(roc_auc_score(y_bin_mod_sub, conf_arr_mod_sub)) if len(np.unique(y_bin_mod_sub)) == 2 else float("nan")
+                auc_mod_sub = float(roc_auc_score(y_bin_mod_sub, conf_arr_mod_sub)) if len(np.unique(y_bin_mod_sub)) == 2 else 0.0
             except Exception:
-                brier_mod_sub = float("nan")
-                auc_mod_sub = float("nan")
-                ece_mod_sub = float("nan")
+                brier_mod_sub = 0.0
+                auc_mod_sub = 0.0
+                ece_mod_sub = 0.0
                 
             # no confidences for modality -> calibration placeholders
             #auc_mod_sub = float("nan"); ece_mod_sub = float("nan"); brier_mod_sub = float("nan")
@@ -2156,7 +2703,7 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             labels_present_mod_sub = []
             overall_prec_macro_mod_sub = overall_rec_macro_mod_sub = overall_f1_macro_mod_sub = overall_f1_macro_abstention_mod_sub = overall_f1_weighted_mod_sub = overall_f1_weighted_abstention_mod_sub= overall_acc_mod_sub = float("nan")
             cm_mod_sub = []
-            auc_mod_sub = ece_mod_sub = brier_mod_sub = float("nan")
+            auc_mod_sub = ece_mod_sub = brier_mod_sub = 0.0
           
             prec_m_sub_ci = rec_m_sub_ci = f1_m_sub_ci = f1_m_sub_abstention_ci = (0.0, (0.0, 0.0))
             acc_m_sub_ci = (0.0, (0.0, 0.0))
@@ -2176,11 +2723,17 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
         print('plane ' +  str(len(labels_present_pl)) + ' ' + str(labels_present_pl))
         
         if y_t_pl and y_p_pl:
-            prec_p = precision_score(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
-            prec_p_ci = per_label_precision_score_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
+            #prec_p = precision_score(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
+            #prec_p_ci = per_label_precision_score_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
 
-            rec_p = recall_score(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
-            rec_p_ci = per_label_recall_score_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
+            #rec_p = recall_score(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
+            #rec_p_ci = per_label_recall_score_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
+            
+            prec_p = precision_with_abstention(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0, abstain_label = "undetermined")
+            prec_p_ci = per_label_precision_with_abstention_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0, abstain_label = "undetermined")
+
+            rec_p = recall_with_abstention(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0, abstain_label = "undetermined")
+            rec_p_ci = per_label_recall_with_abstention_ci(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0, abstain_label = "undetermined")
             
             f1_p = f1_score(y_t_pl, y_p_pl, average=None, labels=labels_present_pl, zero_division=0)
             f1_p_ci = per_label_f1_score_ci(y_t_pl, y_p_pl, labels=labels_present_pl, average=None, zero_division=0)
@@ -2197,27 +2750,37 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             support_p = [int(sum(1 for t in y_t_pl if t == lab)) for lab in labels_present_pl]
             
             # overall (macro) metrics for plane
-            overall_prec_macro_pl = float(precision_score(y_t_pl, y_p_pl, average="macro", zero_division=0))
-            overall_prec_macro_pl_ci = precision_score_ci(y_t_pl, y_p_pl, labels = labels_present_pl, average="macro", zero_division=0)
+            #overall_prec_macro_pl = float(precision_score(y_t_pl, y_p_pl, average="macro", zero_division=0))
+            #overall_prec_macro_pl_ci = precision_score_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="macro", zero_division=0)
             
-            overall_rec_macro_pl = float(recall_score(y_t_pl, y_p_pl, average="macro", zero_division=0))
-            overall_rec_macro_pl_ci = recall_score_ci(y_t_pl, y_p_pl, labels = labels_present_pl, average="macro", zero_division=0)
+            #overall_rec_macro_pl = float(recall_score(y_t_pl, y_p_pl, average="macro", zero_division=0))
+            #overall_rec_macro_pl_ci = recall_score_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="macro", zero_division=0)
+            
+            overall_prec_macro_pl = precision_with_abstention(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl))
+            overall_prec_macro_pl_ci = precision_with_abstention_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="macro", zero_division=0, abstain_label = "undetermined")
+            
+            overall_rec_macro_pl = recall_with_abstention(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl))
+            overall_rec_macro_pl_ci = recall_with_abstention_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="macro", zero_division=0, abstain_label = "undetermined")    
+                      
             
             overall_f1_macro_pl = float(f1_score(y_t_pl, y_p_pl, average="macro", zero_division=0))
-            overall_f1_macro_pl_ci = f1_score_ci(y_t_pl, y_p_pl, labels = labels_present_pl, average="macro", zero_division=0)
+            overall_f1_macro_pl_ci = f1_score_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="macro", zero_division=0)
             
-            overall_f1_macro_abstention_pl = float(f1_with_abstention(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_pl))
-            overall_f1_macro_abstention_pl_ci = f1_with_abstention_ci(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = labels_present_pl)
+            overall_f1_macro_abstention_pl = float(f1_with_abstention(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl)))
+            overall_f1_macro_abstention_pl_ci = f1_with_abstention_ci(y_t_pl, y_p_pl, average="macro", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl))
             
             overall_f1_weighted_pl = float(f1_score(y_t_pl, y_p_pl, average="weighted", zero_division=0))
-            overall_f1_weighted_pl_ci = f1_score_ci(y_t_pl, y_p_pl, labels = labels_present_pl, average="weighted", zero_division=0)
+            overall_f1_weighted_pl_ci = f1_score_ci(y_t_pl, y_p_pl, labels = np.unique(y_t_pl), average="weighted", zero_division=0)
             
-            overall_f1_weighted_abstention_pl = float(f1_with_abstention(y_t_pl, y_p_pl, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_pl))
-            overall_f1_weighted_abstention_pl_ci = f1_with_abstention_ci(y_t_pl, y_p_pl, average="weighted", zero_division=0, abstain_label = "undetermined", labels = labels_present_pl)
+            overall_f1_weighted_abstention_pl = float(f1_with_abstention(y_t_pl, y_p_pl, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl)))
+            overall_f1_weighted_abstention_pl_ci = f1_with_abstention_ci(y_t_pl, y_p_pl, average="weighted", zero_division=0, abstain_label = "undetermined", labels = np.unique(y_t_pl))
             
             overall_acc_pl = balanced_accuracy_score(y_t_pl, y_p_pl)
             overall_acc_pl_ci = balanced_accuracy_score_ci(y_t_pl, y_p_pl)
             #overall_acc_pl = float(np.mean([t == p for t, p in zip(y_t_pl, y_p_pl)]))
+            
+            # normalize labels: acronyms → uppercase, others → Capitalized
+            labels_present_pl_norm = [label_map.get(lbl.lower(), lbl.capitalize()) for lbl in labels_present_pl]
             
             cm_pl_to_plot = confusion_matrix(y_t_pl, y_p_pl, labels=labels_present_pl, normalize="all")#.tolist()
             cm_pl = cm_pl_to_plot.tolist()
@@ -2225,13 +2788,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                        
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_pl)+2, len(labels_present_pl)+2))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_pl_to_plot, display_labels=labels_present_pl) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_pl_to_plot, display_labels=labels_present_pl_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per plane')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normall_plane_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2239,13 +2802,13 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
             
             #if not model == 'bedrock/amazon.nova-lite-v1:0':
             fig, ax = plt.subplots(figsize=(len(labels_present_pl)+1, len(labels_present_pl)+1))   # larger figure
-            display = ConfusionMatrixDisplay(confusion_matrix=cm_pl_rows_to_plot, display_labels=labels_present_pl) 
+            display = ConfusionMatrixDisplay(confusion_matrix=cm_pl_rows_to_plot, display_labels=labels_present_pl_norm) 
             display.plot(cmap="Blues", #values_format=".1%", 
                          ax=ax, colorbar=False) 
             plt.title(model + ' per plane')
             plt.xlabel('Predicted Label')
             plt.ylabel('True Label')
-            plt.xticks(rotation=90, ha='right')          
+            plt.xticks(rotation=45, ha='right')          
             plt.tight_layout() # Adjust layout to prevent labels from overlapping         
             plt.savefig('results/confusion_matrix/cm_normrows_plane_' + re.sub(r"[\/.:]", "_", model) + '_' + out_path[8:] +'.pdf', format='pdf')
             plt.show() # Optional: display the plot
@@ -2257,11 +2820,11 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
                 y_bin_pl = np.array([1 if t == p else 0 for t, p in zip(y_t_pl, y_p_pl)], dtype=float)
                 conf_arr_pl = np.clip(np.array([c if c is not None else 0.0 for c in y_c_pl], dtype=float), 0, 1)
                 brier_pl = float(brier_score_loss(y_bin_pl, conf_arr_pl))
-                auc_pl = float(roc_auc_score(y_bin_pl, conf_arr_pl)) if len(np.unique(y_bin_pl)) == 2 else float("nan")
+                auc_pl = float(roc_auc_score(y_bin_pl, conf_arr_pl)) if len(np.unique(y_bin_pl)) == 2 else 0.0
             except Exception:
-                brier_pl = float("nan")
-                auc_pl = float("nan")
-                ece_pl = float("nan")
+                brier_pl = 0.0
+                auc_pl = 0.0
+                ece_pl = 0.0
                 
             # no confidences for plane -> calibration placeholders
             #auc_pl = float("nan"); ece_pl = float("nan"); brier_pl = float("nan")
@@ -2273,7 +2836,7 @@ def evaluate(data: List[Dict[str, Any]] , out_path: str) -> Dict[str, Any]:
  
             overall_prec_macro_pl = overall_rec_macro_pl = overall_f1_macro_pl = overall_f1_macro_abstention_pl = overall_f1_weighted_pl = overall_f1_weighted_abstention_pl = overall_acc_pl = float("nan")
             cm_pl = []
-            auc_pl = ece_pl = brier_pl = float("nan")
+            auc_pl = ece_pl = brier_pl = 0.0
             
             prec_p_ci = rec_p_ci = f1_p_ci = f1_p_abstention_ci = (0.0, (0.0, 0.0))
             acc_p_ci = (0.0, (0.0, 0.0))
@@ -2699,6 +3262,7 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
         )
     
     # modality subtype overall
+    #lines.append("")
     lines.append("")
     lines.append("# Overall per-Model (specialized_sequence)")
     lines.append("model,accuracy,accuracy_ci,precision_macro,precision_macro_ci,recall_macro,recall_macro_ci,f1_macro,f1_macro_ci,f1_macro_abstention,f1_macro_abstention_ci,f1_weighted,f1_weighted_ci,f1_weighted_abstention,f1_weighted_abstention_ci,auc,brier,ece")
@@ -2727,6 +3291,7 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
         )
 
     # plane overall
+    #lines.append("")
     lines.append("")
     lines.append("# Overall per-Model (plane)")
     lines.append("model,accuracy,accuracy_ci,precision_macro,precision_macro_ci,recall_macro,recall_macro_ci,f1_macro,f1_macro_ci,f1_macro_abstention,f1_macro_abstention_ci,f1_weighted,f1_weighted_ci,f1_weighted_abstention,f1_weighted_abstention_ci,auc,brier,ece")
@@ -2805,13 +3370,13 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
                 
                 sup  = m["per_class_support"][i] if i < len(m["per_class_support"]) else ""
                 
-                if i < len(m["per_class_f1_abstention_ci"]):
+                if i < len(m["per_class_f1_abstention_ci"]) and i < len(m["per_class_precision_ci"]) and i < len(m["per_class_recall_ci"]):
                     lines.append(
                         f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},{f1v_a_ci[0]:.6f} ({f1v_a_ci[1][0]:.6f} - {f1v_a_ci[1][1]:.6f}),{sup}"
                     )
                 else:
                     lines.append(
-                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
+                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},nan,{rec:.6f},nan,{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
                 )
 
     # ---- Per-subclass metrics ----
@@ -2859,19 +3424,18 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
                 f1v  = m["per_subclass_f1"][i] if i < len(m["per_subclass_f1"]) else float("nan")
                 f1v_ci  = m["per_subclass_f1_ci"][i] if i < len(m["per_subclass_f1_ci"]) else float("nan")
                  
-                f1v_a  = m["per_subclass_f1_abstention"][i] if i < len(m["per_subclass_f1_abstention"]) else float("nan")
-                
+                f1v_a  = m["per_subclass_f1_abstention"][i] if i < len(m["per_subclass_f1_abstention"]) else float("nan")   
                 f1v_a_ci  = m["per_subclass_f1_abstention_ci"][i] if i < len(m["per_subclass_f1_abstention_ci"]) else float("nan")
                 
                 sup  = m["per_subclass_support"][i] if i < len(m["per_subclass_support"]) else ""
                 
-                if i < len(m["per_subclass_f1_abstention_ci"]):
+                if i < len(m["per_subclass_f1_abstention_ci"]) and i < len(m["per_subclass_precision_ci"]) and i < len(m["per_subclass_recall_ci"]):         
                     lines.append(
                         f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},{f1v_a_ci[0]:.6f} ({f1v_a_ci[1][0]:.6f} - {f1v_a_ci[1][1]:.6f}),{sup}"
                     )
                 else:
                     lines.append(
-                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
+                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},nan,{rec:.6f},nan,{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
                 )
 
     
@@ -2921,20 +3485,19 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
                 f1v  = m["per_modality_f1"][i] if i < len(m["per_modality_f1"]) else float("nan")
                 f1v_ci  = m["per_modality_f1_ci"][i] if i < len(m["per_modality_f1_ci"]) else float("nan")
                  
-                f1v_a  = m["per_modality_f1_abstention"][i] if i < len(m["per_modality_f1_abstention"]) else float("nan")
-                
+                f1v_a  = m["per_modality_f1_abstention"][i] if i < len(m["per_modality_f1_abstention"]) else float("nan")  
                 f1v_a_ci  = m["per_modality_f1_abstention_ci"][i] if i < len(m["per_modality_f1_abstention_ci"]) else float("nan")
                 
                 sup  = m["per_modality_support"][i] if i < len(m["per_modality_support"]) else ""
                 
-                if i < len(m["per_modality_f1_abstention_ci"]):
+                if i < len(m["per_modality_f1_abstention_ci"]) and i < len(m["per_modality_precision_ci"]) and i < len(m["per_modality_recall_ci"]):
                     lines.append(
                         f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},{f1v_a_ci[0]:.6f} ({f1v_a_ci[1][0]:.6f} - {f1v_a_ci[1][1]:.6f}),{sup}"
                     )
                 else:
                     lines.append(
-                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
-                )
+                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},nan,{rec:.6f},nan,{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
+               )
                 
     
     # ---- Per-modality subtype metrics ----
@@ -2984,19 +3547,18 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
                 f1v_ci  = m["per_modality_sub_f1_ci"][i] if i < len(m["per_modality_sub_f1_ci"]) else float("nan")
                  
                 f1v_a  = m["per_modality_sub_f1_abstention"][i] if i < len(m["per_modality_sub_f1_abstention"]) else float("nan")
-                
                 f1v_a_ci  = m["per_modality_sub_f1_abstention_ci"][i] if i < len(m["per_modality_sub_f1_abstention_ci"]) else float("nan")
                 
                 sup  = m["per_modality_sub_support"][i] if i < len(m["per_modality_sub_support"]) else ""
                 
-                if i < len(m["per_modality_sub_f1_abstention_ci"]):
+                if i < len(m["per_modality_sub_f1_abstention_ci"]) and i < len(m["per_modality_sub_precision_ci"]) and i < len(m["per_modality_sub_recall_ci"]):
                     lines.append(
                         f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},{f1v_a_ci[0]:.6f} ({f1v_a_ci[1][0]:.6f} - {f1v_a_ci[1][1]:.6f}),{sup}"
                     )
                 else:
                     lines.append(
-                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
-                )
+                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},nan,{rec:.6f},nan,{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
+               )
  
     # ---- Per-plane metrics ----
     #lines.append("")
@@ -3057,20 +3619,19 @@ def write_csv(results: Dict[str, Any], out_path: str) -> None:
                 f1v  = m["per_plane_f1"][i] if i < len(m["per_plane_f1"]) else float("nan")
                 f1v_ci  = m["per_plane_f1_ci"][i] if i < len(m["per_plane_f1_ci"]) else float("nan")
                  
-                f1v_a  = m["per_plane_f1_abstention"][i] if i < len(m["per_plane_f1_abstention"]) else float("nan")
-                
+                f1v_a  = m["per_plane_f1_abstention"][i] if i < len(m["per_plane_f1_abstention"]) else float("nan")        
                 f1v_a_ci  = m["per_plane_f1_abstention_ci"][i] if i < len(m["per_plane_f1_abstention_ci"]) else float("nan")
                 
                 sup  = m["per_plane_support"][i] if i < len(m["per_plane_support"]) else ""
                 
-                if i < len(m["per_plane_f1_abstention_ci"]):
+                if i < len(m["per_plane_f1_abstention_ci"]) and i < len(m["per_plane_precision_ci"]) and i < len(m["per_plane_recall_ci"]):
                     lines.append(
                         f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},{f1v_a_ci[0]:.6f} ({f1v_a_ci[1][0]:.6f} - {f1v_a_ci[1][1]:.6f}),{sup}"
                     )
                 else:
                     lines.append(
-                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},{prec_ci[0]:.6f} ({prec_ci[1][0]:.6f} - {prec_ci[1][1]:.6f}),{rec:.6f},{rec_ci[0]:.6f} ({rec_ci[1][0]:.6f} - {rec_ci[1][1]:.6f}),{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
-                )
+                        f"{model},{lab},{accv:.6f},{accv_ci[0]:.6f} ({accv_ci[1][0]:.6f} - {accv_ci[1][1]:.6f}),{prec:.6f},nan,{rec:.6f},nan,{f1v:.6f},{f1v_ci[0]:.6f} ({f1v_ci[1][0]:.6f} - {f1v_ci[1][1]:.6f}),{f1v_a:.6f},nan,{sup}"
+               )
        
 
     # ---- Confusion matrices ----
@@ -3236,10 +3797,7 @@ def main():
     parent_dir = script_dir.parent
     results_dir = parent_dir / 'chatmed' / 'results' 
     
-    jsonl_files = [#'subset_1_temp_0_20251121_144713_grok',
-                   #'medgemma_4b_temp_0_subset_1_noquant',
-                   
-                   
+    jsonl_files = [                 
                    'subset_1_temp_0_20250823_172529',
                      
                    'subset_4+5+6_temp_0_20250909_122803',
@@ -3248,28 +3806,14 @@ def main():
                    
                    'subset_0_25_7_temp_0_20250909_134613_few_shot',
                    
+                   'subset_1+2+3+4+5+6+7_temp_0_20250823_172529'
+                   
                    #'subset_2_temp_0_20250820_011422',
                    #'subset_3_temp_0_20250820_101317',
-                   
                    #'subset_5_temp_0_20250909_161009',
-                   
                    #'subset_4_temp_0_20250909_122803',
-                   
                    #'25_subset_0_25_temp_0'
-                   
-                   
-                   
-                   
-                   #'qwen25vl_32b_subset_1 temp0',
-                   #'subset_0_25_7_temp_0_20250909_122709',
-                   #'subset_0_25_7_temp_0_20250909_134613_few_shot'
-                   
-                   #, '25_subset_0_25_temp_0', 
-                   
-                   
-                   #'few_shot_subset_sample_temp_0_20250827_124624',
-                   #'medgemma_4b_temp_0_subset_1', 'medgemma_27b_temp_0_subset_1'
-                   ]
+                  ]
     
     #jsonl_files = ['subset_1_temp_0.1_20250819_204238', 'subset_1_temp_0.2_20250819_222536', 
     #               'subset_1_temp_0_20250819_183734',#'subset_1_temp_1_20250820_001452',
@@ -3288,7 +3832,9 @@ def main():
           
         # Evaluate predictions and save results
         results = evaluate(data, 'results/all_' + jsonl_file)
-        #write_csv(results, str(results_dir) + '/' + 'evaluation_results_all_' + jsonl_file + '.csv')
+        
+        # ne write_csv(results, str(results_dir) + '/' + 'evaluation_results_all_' + jsonl_file + '.csv')
+        
         write_csv(results, 'results/all_' + jsonl_file + '.csv')
         
         # Pairwise comparisons mcnemar test results
@@ -3307,15 +3853,17 @@ def main():
         #print(f1_matrix)
         
         # Evaluate predictions and save results per dataset
-        
         #results_datasets = []
         
-        datasets = ['images-17','images-44c', 'figshare', 'stroke', 'sclerosis', 'aisd', 'Br35H']
+        datasets = ['images-17','images-44c',
+                    'figshare', 
+                    'stroke', 'sclerosis', 'aisd', 'Br35H'
+                    ]
         for dataset in datasets:
             data_dataset = load_jsonl(jsonl_file_name, dataset)
             print(f"Loaded {len(data_dataset)} samples from {jsonl_file}")
             # Evaluate predictions and save results
-            results_dataset = evaluate(data_dataset, 'results/' + dataset + '_' + jsonl_file)
+            results_dataset = evaluate(data_dataset, 'results/' + dataset + '_' + jsonl_file, dataset)
             write_csv(results_dataset, 'results/' + dataset + '_' + jsonl_file + '.csv') 
         
 if __name__ == "__main__":
